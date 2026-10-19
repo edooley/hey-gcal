@@ -1,0 +1,9 @@
+# Secrets and per-user files live in your user config folder, never here.
+# These patterns are a guard in case a config is pointed inside the repo.
+config*.json
+client_secret*.json
+*.token
+*.token.dpapi
+*.log
+*.plist
+.DS_Store

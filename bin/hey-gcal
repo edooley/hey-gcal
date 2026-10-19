@@ -1,0 +1,7 @@
+#!/usr/bin/env ruby
+# One-way sync from HEY Calendar to a Google calendar. See README.md.
+
+require File.expand_path("../lib/hey_gcal", File.dirname(File.realpath(__FILE__)))
+require File.expand_path("../lib/hey_gcal/cli", File.dirname(File.realpath(__FILE__)))
+
+exit HeyGcal::CLI.new.start(ARGV)
