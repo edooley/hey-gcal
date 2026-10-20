@@ -15,6 +15,7 @@ end
 
 require_relative "hey_gcal/error"
 require_relative "hey_gcal/platform"
+require_relative "hey_gcal/time_zone"
 require_relative "hey_gcal/config"
 require_relative "hey_gcal/hey_client"
 require_relative "hey_gcal/event_mapper"

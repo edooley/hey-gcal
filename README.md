@@ -555,6 +555,7 @@ while you're logged out, run `loginctl enable-linger $USER`.
 | `google.token_store` | `"auto"` | Where to keep the Google sign-in: `auto` (best for your OS), `keychain`, `secret-service`, `dpapi`, or `file`. |
 | `hey.bin` | `null` | Path to the `hey` CLI. If null, it's found on your PATH. |
 | `hey.account` | `null` | Passed to `hey` as `--account` (an id from `hey account list`). |
+| `hey.time_zone` | `null` | Time zone for HEY events saved without one (events created in HEY rather than from an invite), e.g. `"America/Chicago"`. If null, your computer's zone is used. Set it if your HEY account's zone differs from your computer's. Repeating events keep their local time across daylight saving changes in this zone. |
 | `hey.calendars` | `[]` | Only sync these HEY calendars, by name or id (see `hey calendar list`). `[]` means every calendar HEY shows. |
 | `sync.past_days` / `sync.future_days` | `7` / `90` | The date range kept in sync. Older events are left as they are. |
 | `sync.skip_declined` | `true` | Leave out invites you declined, and remove them if you decline later. |
@@ -611,6 +612,13 @@ If something still isn't right:
 - **Nothing happens at all.** Run `hey-gcal doctor`. Also look at the
   `<name>.scheduler.log` file in the logs folder, which catches errors from
   before hey-gcal starts (for example, a Ruby version that was removed).
+- **A repeating event is an hour off after a daylight saving change.** For a
+  repeating event saved without a time zone, HEY reports each generated day at
+  the series' original UTC time (a known HEY bug:
+  [basecamp/hey-cli#590](https://github.com/basecamp/hey-cli/issues/590)).
+  hey-gcal corrects this by keeping the series' local time in `hey.time_zone`
+  (or your computer's zone), so check that setting first. The correction only
+  changes times HEY reports wrongly, so it does nothing once HEY is fixed.
 - **An event is missing.** It must be inside the date range, on a HEY calendar
   that's switched on in HEY, and not declined. `hey-gcal sync --dry-run` shows
   what hey-gcal sees.

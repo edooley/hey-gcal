@@ -314,7 +314,7 @@ module HeyGcal
 
       with_lock(config) do
         result = Syncer.new(
-          hey: HeyClient.new(bin: @options[:hey_bin] || config.hey_bin, account: config.hey_account,
+          hey: HeyClient.new(bin: @options[:hey_bin] || config.hey_bin, account: config.hey_account, time_zone: config.hey_time_zone,
                              calendars: config.hey_calendars, skip_declined: config.skip_declined?),
           google: google_client(config, SecretStore.for(config).read),
           config: config,

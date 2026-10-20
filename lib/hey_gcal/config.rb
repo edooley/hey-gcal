@@ -17,7 +17,8 @@ module HeyGcal
       "hey" => {
         "bin" => nil,
         "account" => nil,
-        "calendars" => []
+        "calendars" => [],
+        "time_zone" => nil
       },
       "sync" => {
         "past_days" => 7,
@@ -79,6 +80,7 @@ module HeyGcal
       end
       problems << "hey.account must be an account id from `hey account list`" if hey_account && !hey_account.to_s.match?(ACCOUNT_FORMAT)
       problems << "hey.calendars must be a list" unless hey_calendars.is_a?(Array)
+      problems << "hey.time_zone #{hey_time_zone.inspect} isn't a time zone this computer knows (use a name like America/Chicago)" if hey_time_zone && !TimeZone.valid?(hey_time_zone)
       problems << "google.token_store must be one of #{SecretStore::STORES.join(", ")}" unless SecretStore::STORES.include?(token_store)
       problems << "sync.detail must be \"full\" or \"minimal\"" unless %w[full minimal].include?(detail)
       problems << "sync.title_prefix must be text (up to 40 characters)" unless data["sync"]["title_prefix"].is_a?(String) && data["sync"]["title_prefix"].length <= 40
@@ -104,6 +106,7 @@ module HeyGcal
     def hey_bin = data["hey"]["bin"]
     def hey_account = data["hey"]["account"]
     def hey_calendars = data["hey"]["calendars"]
+    def hey_time_zone = data["hey"]["time_zone"]
     def past_days = data["sync"]["past_days"]
     def future_days = data["sync"]["future_days"]
     def skip_declined? = data["sync"]["skip_declined"] != false

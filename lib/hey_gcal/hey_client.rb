@@ -10,8 +10,11 @@ module HeyGcal
     TIMEOUT = 90
 
     # runner: anything responding to #call(argv) => [stdout, stderr, exit_status]
-    def initialize(bin: nil, account: nil, calendars: [], skip_declined: true, runner: nil)
+    # time_zone: the zone for events HEY stored without one (default: this
+    # computer's). See TimeZone for why it matters.
+    def initialize(bin: nil, account: nil, calendars: [], skip_declined: true, time_zone: nil, runner: nil)
       @bin = bin || ENV["HEY_GCAL_HEY_BIN"] || "hey"
+      @time_zone = time_zone || TimeZone.system_zone
       @account = account
       @calendars = calendars.map(&:to_s)
       @skip_declined = skip_declined
@@ -27,7 +30,7 @@ module HeyGcal
         week(date).each do |event|
           next unless keep?(event)
 
-          events[EventMapper.key(event)] = event
+          events[EventMapper.key(event)] = normalize(event)
         end
         date += 7
       end
@@ -53,6 +56,18 @@ module HeyGcal
     end
 
     private
+
+    # Repeating-event days HEY generated get the series' wall-clock time
+    # (see TimeZone), and events stored without a zone get the default one.
+    def normalize(event)
+      event = TimeZone.fix_occurrence(event, @time_zone)
+      return event unless @time_zone && event["all_day"] != true
+
+      event.merge(
+        "starts_at_time_zone" => event["starts_at_time_zone"] || @time_zone,
+        "ends_at_time_zone" => event["ends_at_time_zone"] || event["starts_at_time_zone"] || @time_zone
+      )
+    end
 
     def keep?(event)
       return false unless event["type"].nil? || event["type"] == "Calendar::Event"
