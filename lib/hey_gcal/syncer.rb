@@ -7,8 +7,11 @@ module HeyGcal
     # Systemic errors stop the run; anything else is pinned to the one event.
     SYSTEMIC = %i[network google_auth calendar_access secret_store hey_auth hey_cli].freeze
 
-    Plan = Struct.new(:inserts, :updates, :deletes, :unchanged, keyword_init: true) do
+    # held: deletes the safety check is holding back (see hold_deletes);
+    # hold_reason says why.
+    Plan = Struct.new(:inserts, :updates, :deletes, :unchanged, :held, :hold_reason, keyword_init: true) do
       def writes = inserts.size + updates.size + deletes.size
+      def held? = !held.to_a.empty?
     end
 
     Result = Struct.new(:plan, :hey_count, :inserted, :updated, :deleted, :warnings, :event_errors, keyword_init: true) do
@@ -46,7 +49,7 @@ module HeyGcal
       foreign_keys = (marked - managed).map { |e| e.dig("extendedProperties", "private", "hey_key") }.compact
 
       plan = plan(desired, hey_events, managed, window_start, window_end, foreign_keys)
-      guard_deletes!(plan, hey_events, managed)
+      hold_deletes(plan, hey_events, managed)
 
       result = Result.new(plan: plan, hey_count: desired.size, inserted: 0, updated: 0, deleted: 0, warnings: @warnings, event_errors: @blocked.dup)
       return result if @dry_run
@@ -94,27 +97,49 @@ module HeyGcal
       end
 
       gone = by_key.reject { |key, google_event| hey_events.key?(key) || !starts_within?(google_event, window_start, window_end) }
-      deletes = (gone.values + duplicates).map { |google_event| { google: google_event } }
+      # Extra copies of an event HEY still has are our own cleanup, never held.
+      deletes = gone.values.map { |google_event| { google: google_event } } +
+                duplicates.map { |google_event| { google: google_event, duplicate: true } }
 
-      Plan.new(inserts: inserts, updates: updates, deletes: deletes, unchanged: unchanged)
+      Plan.new(inserts: inserts, updates: updates, deletes: deletes, unchanged: unchanged, held: [])
     end
 
-    def guard_deletes!(plan, hey_events, managed)
-      return if @allow_deletes || plan.deletes.empty?
+    # The safety check on deletes. Every run deletes what is missing from
+    # HEY's answer, so an answer that looks fine but isn't (a calendar hidden
+    # in HEY, a config typo, `hey` signed in to another account, a format
+    # change) would empty the Google calendar. Ordinary changes (a series
+    # ending, a declined meeting, a cleared week) must not trip it, so it
+    # counts a repeating event's days as one and only stops when the answer
+    # looks like a disaster:
+    #
+    #   - HEY returned no events at all while synced copies exist, or
+    #   - more than max_delete_ratio of the synced copies would go, spread
+    #     over more than max_deletes separate events (a series counts once).
+    #
+    # Even then only those deletes wait; new and changed events still sync.
+    def hold_deletes(plan, hey_events, managed)
+      gone = plan.deletes.reject { |d| d[:duplicate] }
+      return if @allow_deletes || gone.empty?
 
-      count = plan.deletes.size
+      series = gone.map { |d| series_key(d[:google].dig("extendedProperties", "private", "hey_key")) }.uniq
       reason =
         if hey_events.empty?
-          "HEY returned no events at all, but #{managed.size} synced events exist on Google"
-        elsif count > @config.max_deletes
-          "this run would delete #{count} events (limit #{@config.max_deletes})"
-        elsif count > 2 && count > @config.max_delete_ratio * managed.size
-          "this run would delete #{count} of #{managed.size} synced events (over #{(@config.max_delete_ratio * 100).round}%)"
+          "HEY returned no events at all, but #{managed.size} synced copies exist on Google"
+        elsif series.size > @config.max_deletes && gone.size > @config.max_delete_ratio * managed.size
+          "#{gone.size} of #{managed.size} synced copies (#{series.size} separate events) would be deleted at once, " \
+            "more than #{(@config.max_delete_ratio * 100).round}% across more than #{@config.max_deletes} events"
         end
       return unless reason
 
-      raise Error.new(:circuit_breaker, "Stopped before deleting anything: #{reason}.",
-                      details: { deletes: plan.deletes.map { |d| describe_google(d[:google]) } })
+      plan.held = gone
+      plan.deletes -= gone
+      plan.hold_reason = reason
+    end
+
+    # "<series>_<YYYY-MM-DD>" -> "<series>": every day of a repeating event
+    # counts as one event for the safety check.
+    def series_key(key)
+      key.to_s.sub(/_\d{4}-\d{2}-\d{2}\z/, "")
     end
 
     def execute(plan, result)
@@ -214,7 +239,9 @@ module HeyGcal
       "\"#{event["title"]}\" #{event["starts_at"]} [#{EventMapper.key(event)}]"
     end
 
-    def describe_google(google_event)
+    def describe_google(google_event) = self.class.describe_google(google_event)
+
+    def self.describe_google(google_event)
       start = google_event.dig("start", "dateTime") || google_event.dig("start", "date")
       "\"#{google_event["summary"]}\" #{start} [#{google_event.dig("extendedProperties", "private", "hey_key")}]"
     end

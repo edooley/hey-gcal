@@ -561,7 +561,7 @@ while you're logged out, run `loginctl enable-linger $USER`.
 | `sync.skip_declined` | `true` | Leave out invites you declined, and remove them if you decline later. |
 | `sync.title_prefix` | `""` | Text put in front of every copied title, exactly as written. For example, `"Work: "` turns "Standup" into "Work: Standup". Include the trailing space. Changing it updates existing copies on the next run. |
 | `sync.detail` | `"full"` | `"full"`: notes, organizer, guests and a HEY link. `"minimal"`: title, time and Meet link only. |
-| `sync.max_deletes` / `sync.max_delete_ratio` | `5` / `0.3` | Safety limits. A run that would delete more than this stops and alerts you instead. |
+| `sync.max_deletes` / `sync.max_delete_ratio` | `5` / `0.5` | The delete safety check. Deletes are held back only when more than `max_delete_ratio` of the synced copies would disappear at once, spread over more than `max_deletes` separate events. Every day of a repeating event counts as one event, so ending a series never trips it. New and changed events still sync while deletes are held. |
 | `healthchecks_url` | `null` | Your Healthchecks.io ping URL. |
 | `stale_after_hours` | `24` | How long without a successful sync before `hey-gcal status` and the Omarchy bar icon flag a problem. Set it to your Healthchecks Grace Time so they agree. Any number of hours works. |
 
@@ -602,7 +602,7 @@ Failure emails, notifications and `hey-gcal status` all name one of these:
 | **Can't reach the Google calendar** | Check that the calendar still exists, that your account can make changes to its events, and that `google.calendar_id` is right. |
 | **Can't read the saved Google sign-in** | Make sure you're logged in to the computer (keyrings unlock at login). Allow access if the system asks. Run `hey-gcal auth` to save a fresh sign-in. |
 | **Couldn't set up the background job** | Read the scheduler's error, then run `hey-gcal install` again. |
-| **Stopped a large delete** | Check in HEY that the listed events really are gone, then run `hey-gcal sync --allow-deletes` once. If they aren't gone, HEY gave an incomplete answer; wait for the next run. |
+| **Holding back a large delete** | Everything else is still syncing. Check in HEY that the listed events really are gone. If they aren't, look for a calendar switched off in HEY's web app, a `hey.calendars` or `sync.skip_declined` change, or `hey` signed in to another account. If they are gone, run `hey-gcal sync --allow-deletes` once. |
 | **Some events failed to sync** | Read the error next to each event in the email, then run `hey-gcal sync` again. |
 | **Google changed a Meet link** | Join from the link on the first line of the description, and please open an issue. |
 | **Network or Google outage** | Usually clears up on its own. Check your connection and <https://www.google.com/appsstatus/dashboard/>. |
@@ -652,9 +652,19 @@ What hey-gcal can reach, and what protects it:
   calendar. Invitations from elsewhere don't qualify. It also refuses to add an
   event when a marked copy exists that doesn't pass this check, so the sync can
   never fill your calendar with duplicates.
-- **Safety limit on deletes.** Any run that would delete an unusual number of
-  events stops. For example, if HEY suddenly returns nothing, it stops instead
-  of emptying your calendar.
+- **Safety check on deletes.** Every run deletes copies of events that are
+  gone from HEY, so an answer from HEY that looks fine but isn't could empty
+  your calendar. That can happen when:
+  - a calendar is switched off in HEY's web app;
+  - a config change filters events out;
+  - `hey` is signed in to another account;
+  - HEY's or the CLI's format changes.
+
+  When HEY returns nothing, or most of your synced events would vanish at
+  once across several separate events, hey-gcal holds those deletes back and
+  alerts you, while new and changed events keep syncing. Ordinary changes
+  don't trip it: ending or deleting a repeating event, declining a meeting,
+  clearing a week.
 - **Network.** HTTPS only, with certificate checks on. It connects to:
   - `accounts.google.com` (sign-in, in your browser)
   - `oauth2.googleapis.com`

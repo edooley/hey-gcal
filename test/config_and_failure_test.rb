@@ -84,7 +84,7 @@ class FailureTest < Minitest::Test
   def test_report_lists_deletes_and_steps
     error = HeyGcal::Error.new(:circuit_breaker, "Stopped", details: { deletes: ["\"A\" 2030-01-01 [1]"] })
     report = HeyGcal::Failure.report(error, config: Fixtures.config, consecutive: 2)
-    assert_includes report, "Stopped a large delete"
+    assert_includes report, "Holding back a large delete"
     assert_includes report, "would delete: \"A\" 2030-01-01 [1]"
     assert_includes report, "sync --allow-deletes"
     assert_includes report, "2 runs in a row"

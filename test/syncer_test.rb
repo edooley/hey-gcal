@@ -3,8 +3,8 @@ require_relative "test_helper"
 class SyncerTest < Minitest::Test
   TODAY = Date.new(2030, 1, 10)
 
-  def sync(hey_events, google, config: Fixtures.config, **opts)
-    HeyGcal::Syncer.new(hey: FakeHey.new(hey_events), google: google, config: config, today: TODAY, **opts).run
+  def sync(hey_events, google, config: Fixtures.config, today: TODAY, **opts)
+    HeyGcal::Syncer.new(hey: FakeHey.new(hey_events), google: google, config: config, today: today, **opts).run
   end
 
   def test_inserts_then_is_idempotent
@@ -108,25 +108,69 @@ class SyncerTest < Minitest::Test
     refute google.calls.any? { |c| c == [:delete, "x1"] }
   end
 
-  def test_circuit_breaker_when_hey_returns_nothing
+  def weekly(series, weeks, title: "Weekly")
+    (0...weeks).map do |w|
+      day = Date.new(2030, 1, 8) + 7 * w
+      Fixtures.hey_event("id" => series, "occurrence_id" => "#{series}_#{day}", "title" => title,
+                         "starts_at" => "#{day}T15:00:00Z", "ends_at" => "#{day}T16:00:00Z")
+    end
+  end
+
+  def test_holds_deletes_when_hey_returns_nothing
     google = FakeGoogle.new
     sync([Fixtures.hey_event], google)
-    error = assert_raises(HeyGcal::Error) { sync([], google) }
-    assert_equal :circuit_breaker, error.kind
+    result = sync([], google)
+    assert result.plan.held?
+    assert_includes result.plan.hold_reason, "HEY returned no events"
+    assert_equal 0, result.deleted
     assert_equal 1, google.events.size
   end
 
-  def test_circuit_breaker_on_many_deletes
+  def test_holds_deletes_when_most_separate_events_vanish
     events = (1..8).map { |i| Fixtures.hey_event("id" => i, "title" => "E#{i}") }
     google = FakeGoogle.new
     sync(events, google)
-    error = assert_raises(HeyGcal::Error) { sync(events.first(1), google) }
-    assert_equal :circuit_breaker, error.kind
-    assert_equal 7, error.details[:deletes].size
+    result = sync(events.first(1), google)
+    assert_equal 7, result.plan.held.size
+    assert_equal 0, result.deleted
     assert_equal 8, google.events.size
 
     result = sync(events.first(1), google, allow_deletes: true)
     assert_equal 7, result.deleted
+  end
+
+  def test_ending_a_long_series_is_not_held
+    series = weekly(900, 13)
+    others = (1..3).map { |i| Fixtures.hey_event("id" => i, "title" => "One-off #{i}") }
+    google = FakeGoogle.new
+    sync(series + others, google)
+    result = sync(others, google, today: Date.new(2030, 1, 5))
+    refute result.plan.held?, result.plan.hold_reason
+    assert_equal 13, result.deleted
+    assert_equal 3, google.events.size
+  end
+
+  def test_ending_two_series_that_are_most_of_the_calendar_is_not_held
+    google = FakeGoogle.new
+    sync(weekly(900, 13) + weekly(901, 13, title: "Other") + [Fixtures.hey_event("id" => 1)], google, today: Date.new(2030, 1, 5))
+    result = sync([Fixtures.hey_event("id" => 1)], google, today: Date.new(2030, 1, 5))
+    refute result.plan.held?, result.plan.hold_reason
+    assert_equal 26, result.deleted
+  end
+
+  def test_held_deletes_do_not_block_new_and_changed_events
+    events = (1..8).map { |i| Fixtures.hey_event("id" => i, "title" => "E#{i}") }
+    google = FakeGoogle.new
+    sync(events, google)
+    renamed = events.first.merge("title" => "E1 renamed")
+    added = Fixtures.hey_event("id" => 99, "title" => "New one")
+    result = sync([renamed, added], google)
+    assert result.plan.held?
+    assert_equal 1, result.inserted
+    assert_equal 1, result.updated
+    assert_includes google.events.values.map { |e| e["summary"] }, "E1 renamed"
+    assert_includes google.events.values.map { |e| e["summary"] }, "New one"
+    assert_equal 9, google.events.size
   end
 
   def test_small_deletes_pass

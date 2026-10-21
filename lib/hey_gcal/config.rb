@@ -27,7 +27,7 @@ module HeyGcal
         "detail" => "full",
         "title_prefix" => "",
         "max_deletes" => 5,
-        "max_delete_ratio" => 0.3
+        "max_delete_ratio" => 0.5
       },
       "healthchecks_url" => nil,
       "stale_after_hours" => 24

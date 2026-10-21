@@ -79,12 +79,12 @@ module HeyGcal
         )
       when :circuit_breaker
         Explanation.new(
-          title: "Stopped a large delete",
-          impact: "Inserts and updates were not applied either; nothing was changed.",
+          title: "Holding back a large delete",
+          impact: "New and changed events were synced. Only the deletes listed above are on hold, and they stay on hold until you decide.",
           actions: [
-            "Open HEY and check whether these events really were cancelled or removed.",
-            "If they were, run `#{cli} sync --allow-deletes#{cfg}` once to apply the deletes.",
-            "If they were not, HEY's answer was incomplete; check `hey event week --json` and wait for the next run."
+            "Check HEY: were these events really cancelled or removed?",
+            "If not, look for what hid them: a calendar switched off in HEY's web app (hey-gcal only sees calendars that are switched on), a change to hey.calendars or sync.skip_declined in #{config_path}, or `hey` signed in to a different account (`hey auth status`).",
+            "If the deletes are right, run `#{cli} sync --allow-deletes#{cfg}` once to apply them."
           ]
         )
       when :partial

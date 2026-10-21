@@ -325,6 +325,16 @@ module HeyGcal
 
         return print_plan(result) if @options[:dry_run]
 
+        if result.plan.held?
+          # Everything else was applied; only these deletes wait for a person.
+          reporter.log("applied #{result.summary}")
+          held = result.plan.held
+          error = Error.new(:circuit_breaker, "Holding back #{held.size} deletes: #{result.plan.hold_reason}.",
+                            details: { deletes: held.map { |d| Syncer.describe_google(d[:google]) }, events: result.event_errors })
+          reporter.failure(error)
+          return 1
+        end
+
         if result.event_errors.any?
           kinds = result.event_errors.map { |e| e[:kind] }.uniq
           error = Error.new(kinds == [:meet_mismatch] ? :meet_mismatch : :partial,
@@ -360,6 +370,11 @@ module HeyGcal
       plan.updates.each { |i| say "  ~ #{line_for(i[:body])}" }
       say "Would delete #{plan.deletes.size}:"
       plan.deletes.each { |i| say "  - #{line_for(i[:google])}" }
+      if plan.held?
+        say "Would hold back #{plan.held.size} deletes (#{plan.hold_reason}):"
+        plan.held.each { |i| say "  ? #{line_for(i[:google])}" }
+        say "  Apply them with: hey-gcal sync --allow-deletes#{config_flag}"
+      end
       say "Unchanged: #{plan.unchanged}"
       0
     end
